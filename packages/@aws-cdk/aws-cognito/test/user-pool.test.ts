@@ -1,5 +1,6 @@
 import { Match, Template } from '@aws-cdk/assertions';
 import { Role, ServicePrincipal } from '@aws-cdk/aws-iam';
+import * as kms from '@aws-cdk/aws-kms';
 import * as lambda from '@aws-cdk/aws-lambda';
 import { CfnParameter, Duration, Stack, Tags } from '@aws-cdk/core';
 import { Construct } from 'constructs';
@@ -330,7 +331,7 @@ describe('User Pool', () => {
     });
   });
 
-  test('add* API correctly appends triggers', () => {
+  test('add* API correctly appends triggers and KMS key', () => {
     // GIVEN
     const stack = new Stack();
 
@@ -344,6 +345,9 @@ describe('User Pool', () => {
     const preTokenGeneration = fooFunction(stack, 'preTokenGeneration');
     const userMigration = fooFunction(stack, 'userMigration');
     const verifyAuthChallengeResponse = fooFunction(stack, 'verifyAuthChallengeResponse');
+    const customEmailSender = fooFunction(stack, 'customEmailSender');
+    const customSmsSender = fooFunction(stack, 'customSmsSender');
+    const customSenderKmsKey = new kms.Key(stack, 'customSenderKmsKey');
 
     // WHEN
     const pool = new UserPool(stack, 'Pool');
@@ -357,6 +361,9 @@ describe('User Pool', () => {
     pool.addTrigger(UserPoolOperation.PRE_TOKEN_GENERATION, preTokenGeneration);
     pool.addTrigger(UserPoolOperation.USER_MIGRATION, userMigration);
     pool.addTrigger(UserPoolOperation.VERIFY_AUTH_CHALLENGE_RESPONSE, verifyAuthChallengeResponse);
+    pool.addTrigger(UserPoolOperation.CUSTOM_EMAIL_SENDER, customEmailSender);
+    pool.addTrigger(UserPoolOperation.CUSTOM_SMS_SENDER, customSmsSender);
+    pool.addCustomTriggerKmsKey(customSenderKmsKey);
 
     // THEN
     Template.fromStack(stack).hasResourceProperties('AWS::Cognito::UserPool', {
@@ -371,12 +378,21 @@ describe('User Pool', () => {
         PreTokenGeneration: stack.resolve(preTokenGeneration.functionArn),
         UserMigration: stack.resolve(userMigration.functionArn),
         VerifyAuthChallengeResponse: stack.resolve(verifyAuthChallengeResponse.functionArn),
+        CustomEmailSender: {
+          LambdaArn: stack.resolve(customEmailSender.functionArn),
+          LambdaVersion: '$LATEST',
+        },
+        CustomSMSSender: {
+          LambdaArn: stack.resolve(customSmsSender.functionArn),
+          LambdaVersion: '$LATEST',
+        },
+        KMSKeyID: stack.resolve(customSenderKmsKey.keyId),
       },
     });
 
     [createAuthChallenge, customMessage, defineAuthChallenge, postAuthentication,
       postConfirmation, preAuthentication, preSignUp, preTokenGeneration, userMigration,
-      verifyAuthChallengeResponse].forEach((fn) => {
+      verifyAuthChallengeResponse, customEmailSender, customSmsSender].forEach((fn) => {
       Template.fromStack(stack).hasResourceProperties('AWS::Lambda::Permission', {
         Action: 'lambda:InvokeFunction',
         FunctionName: stack.resolve(fn.functionArn),
